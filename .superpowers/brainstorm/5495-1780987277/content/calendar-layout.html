@@ -1,0 +1,144 @@
+<h2>Как выглядит календарь?</h2>
+<p class="subtitle">Выбери подход к отображению расписания рабочих точек</p>
+
+<div class="cards">
+
+  <!-- Option A: Weekly resource grid -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 12px; background: #f8f9fa;">
+      <div style="font-size: 11px; font-weight: 600; color: #666; margin-bottom: 6px;">ПН 9 ИЮН</div>
+      <table style="width:100%; border-collapse: collapse; font-size: 10px;">
+        <thead>
+          <tr>
+            <th style="width:36px; padding:2px; color:#999;"></th>
+            <th style="padding:2px 4px; background:#e8f0fe; border-radius:4px; text-align:center; color:#1a73e8;">Кресло 1</th>
+            <th style="padding:2px 4px; background:#e8f0fe; border-radius:4px; text-align:center; color:#1a73e8;">Кресло 2</th>
+            <th style="padding:2px 4px; background:#e8f0fe; border-radius:4px; text-align:center; color:#1a73e8;">Кабинет</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color:#999; padding:2px; text-align:right;">09:00</td>
+            <td style="padding:2px;"><div style="background:#4caf50; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Мария К.</div></td>
+            <td style="padding:2px;"></td>
+            <td style="padding:2px;"></td>
+          </tr>
+          <tr>
+            <td style="color:#999; padding:2px; text-align:right;">10:00</td>
+            <td style="padding:2px;"><div style="background:#4caf50; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Мария К.</div></td>
+            <td style="padding:2px;"><div style="background:#2196f3; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Анна П.</div></td>
+            <td style="padding:2px;"></td>
+          </tr>
+          <tr>
+            <td style="color:#999; padding:2px; text-align:right;">11:00</td>
+            <td style="padding:2px;"></td>
+            <td style="padding:2px;"><div style="background:#2196f3; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Анна П.</div></td>
+            <td style="padding:2px;"><div style="background:#ff9800; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Иван С.</div></td>
+          </tr>
+          <tr>
+            <td style="color:#999; padding:2px; text-align:right;">12:00</td>
+            <td style="padding:2px;"></td>
+            <td style="padding:2px;"></td>
+            <td style="padding:2px;"><div style="background:#ff9800; color:white; border-radius:3px; padding:2px 4px; font-size:9px;">Иван С.</div></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:9px; color:#999; margin-top:4px; text-align:center;">← кнопки «‹ день ›»</div>
+    </div>
+    <div class="card-body">
+      <h3>A — День: все точки рядом</h3>
+      <p>Один день, все рабочие точки — колонки. Сразу видно кто где занят. Переключение по дням.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Weekly per-workpoint -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 12px; background: #f8f9fa;">
+      <div style="display:flex; gap:6px; margin-bottom:6px; align-items:center;">
+        <div style="font-size:10px; color:#666;">Точка:</div>
+        <select style="font-size:10px; padding:2px 4px; border:1px solid #ccc; border-radius:3px; background:white;">
+          <option>Кресло 1</option>
+        </select>
+      </div>
+      <table style="width:100%; border-collapse: collapse; font-size: 10px;">
+        <thead>
+          <tr style="background:#f0f0f0;">
+            <th style="width:32px; padding:2px; color:#999;"></th>
+            <th style="padding:3px; text-align:center; font-weight:500;">Пн</th>
+            <th style="padding:3px; text-align:center; font-weight:500;">Вт</th>
+            <th style="padding:3px; text-align:center; font-weight:500; background:#e8f0fe; color:#1a73e8;">Ср</th>
+            <th style="padding:3px; text-align:center; font-weight:500;">Чт</th>
+            <th style="padding:3px; text-align:center; font-weight:500;">Пт</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color:#999; text-align:right; padding:2px;">09</td>
+            <td style="padding:1px;"><div style="background:#4caf50; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Мария</div></td>
+            <td></td>
+            <td style="background:#f0f7ff;"><div style="background:#2196f3; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Анна</div></td>
+            <td></td>
+            <td><div style="background:#4caf50; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Мария</div></td>
+          </tr>
+          <tr>
+            <td style="color:#999; text-align:right; padding:2px;">10</td>
+            <td style="padding:1px;"><div style="background:#4caf50; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Мария</div></td>
+            <td><div style="background:#ff9800; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Иван</div></td>
+            <td style="background:#f0f7ff;"></td>
+            <td><div style="background:#9c27b0; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Ольга</div></td>
+            <td></td>
+          </tr>
+          <tr>
+            <td style="color:#999; text-align:right; padding:2px;">11</td>
+            <td></td>
+            <td><div style="background:#ff9800; color:white; border-radius:2px; padding:1px 3px; font-size:8px;">Иван</div></td>
+            <td style="background:#f0f7ff;"></td>
+            <td></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:9px; color:#999; margin-top:4px; text-align:center;">← кнопки «‹ неделя ›»</div>
+    </div>
+    <div class="card-body">
+      <h3>B — Неделя одной точки</h3>
+      <p>Выбираешь точку вверху, видишь её расписание на неделю по часам. Хорошо если точек мало.</p>
+    </div>
+  </div>
+
+  <!-- Option C: List/agenda -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 12px; background: #f8f9fa;">
+      <div style="font-size:11px; font-weight:600; margin-bottom:8px; color:#333;">Среда, 9 июня</div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <div style="display:flex; align-items:center; gap:6px; padding:5px 8px; background:white; border-radius:4px; border-left:3px solid #4caf50; font-size:10px;">
+          <div style="color:#999; width:36px;">09:00</div>
+          <div style="flex:1;">
+            <div style="font-weight:500;">Мария К.</div>
+            <div style="color:#666; font-size:9px;">Кресло 1 · Стрижка · 1ч</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; padding:5px 8px; background:white; border-radius:4px; border-left:3px solid #2196f3; font-size:10px;">
+          <div style="color:#999; width:36px;">10:00</div>
+          <div style="flex:1;">
+            <div style="font-weight:500;">Анна П.</div>
+            <div style="color:#666; font-size:9px;">Кресло 2 · Окрашивание · 2ч</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; padding:5px 8px; background:white; border-radius:4px; border-left:3px solid #ff9800; font-size:10px;">
+          <div style="color:#999; width:36px;">11:00</div>
+          <div style="flex:1;">
+            <div style="font-weight:500;">Иван С.</div>
+            <div style="color:#666; font-size:9px;">Кабинет · Консультация · 1ч</div>
+          </div>
+        </div>
+        <div style="text-align:center; padding:4px; color:#bbb; font-size:9px;">+ Добавить запись</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Список на день</h3>
+      <p>Нет сетки, только список записей на выбранный день. Быстро, без лишнего. Подходит если много пространств.</p>
+    </div>
+  </div>
+
+</div>
