@@ -1,5 +1,21 @@
-node_modules/
+# IDE settings
+.idea/
+.superpowers/
+*.iml
+
+# Runtime files
+state/
+server.log
+server.pid
+server-stopped
+
+# Environment files
 .env
-data/
-.claude/
-*.pen
+.env.local
+.env.*.local
+
+# Build outputs
+target/
+build/
+out/
+*.class
