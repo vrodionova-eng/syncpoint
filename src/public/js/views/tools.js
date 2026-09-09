@@ -17,7 +17,7 @@ async function render(mount, api) {
     ]);
   } catch (e) { mount.append(el('div', { class: 'banner' }, e.message)); }
 
-  const spaceName = (id) => (id == null ? 'Общие (без пространства)' : (spaces.find((s) => s.id === id)?.name || '—'));
+  const spaceName = (id) => (id == null ? 'Без пространства' : (spaces.find((s) => s.id === id)?.name || '—'));
 
   if (!tools.length) mount.append(el('div', { class: 'muted' }, 'Пока пусто.'));
   for (const tool of tools) {
@@ -50,7 +50,7 @@ async function render(mount, api) {
         ...groupRows,
       ]),
       el('div', {}, [
-        el('button', { class: 'btn link', onclick: () => addInstance(tool, spaces, mount, api) }, '+ экземпляр'),
+        el('button', { class: 'btn link', onclick: () => openEdit(tool, own, spaces, mount, api) }, 'Изменить'),
         el('button', { class: 'btn link', onclick: () => del(tool, mount, api) }, 'Удалить'),
       ]),
     ]));
@@ -61,7 +61,7 @@ async function render(mount, api) {
 // удаляет лишние (сначала безымянные), чтобы итог равнялся заданному числу.
 function editGroup(tool, group, spaces, mount, api) {
   const count = el('input', { type: 'number', min: '0', value: String(group.items.length) });
-  const name = group.spaceId == null ? 'Общие (без пространства)'
+  const name = group.spaceId == null ? 'Без пространства'
     : (spaces.find((s) => s.id === group.spaceId)?.name || '—');
   openModal({
     title: `${tool.name}: ${name}`,
@@ -90,7 +90,7 @@ function editGroup(tool, group, spaces, mount, api) {
 function editInstance(inst, spaces, mount, api) {
   const label = textField('Название экземпляра', inst.label || '');
   const sel = el('select', {});
-  sel.append(el('option', { value: '' }, 'Общие (без пространства)'));
+  sel.append(el('option', { value: '' }, 'Без пространства'));
   for (const s of spaces) {
     const opt = el('option', { value: s.id }, s.name);
     if (inst.spaceId === s.id) opt.selected = true;
@@ -112,6 +112,73 @@ function editInstance(inst, spaces, mount, api) {
   });
 }
 
+function openEdit(tool, instances, spaces, mount, api) {
+  const name = textField('Название инструмента', tool.name);
+  const rowsWrap = el('div', {});
+  const rows = [];
+  let saving = false;
+  const groups = new Map();
+  for (const instance of instances) {
+    const key = instance.spaceId ?? null;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(instance);
+  }
+  // Include every space so quantities can also be assigned to a new space.
+  const destinations = [{ id: null, name: 'Без пространства' }, ...spaces];
+  for (const key of groups.keys()) {
+    if (!destinations.some((s) => s.id === key)) destinations.push({ id: key, name: 'Неизвестное пространство' });
+  }
+  for (const space of destinations) {
+    const items = [...(groups.get(space.id) || [])];
+    const count = el('input', { type: 'number', min: '0', step: '1', value: String(items.length), style: 'width:90px' });
+    rows.push({ spaceId: space.id, items, count });
+    rowsWrap.append(el('div', { class: 'field' }, [el('label', {}, space.name), count]));
+  }
+  openModal({
+    title: 'Изменить инструмент',
+    body: el('div', {}, [
+      name.field,
+      el('div', { class: 'muted' }, 'Количество экземпляров по пространствам (итоговое):'),
+      rowsWrap,
+    ]),
+    onSubmit: async () => {
+      if (saving) throw new Error('Сохранение уже выполняется');
+      const nextName = name.input.value.trim();
+      if (!nextName) throw new Error('Укажите название');
+      const targets = rows.map((row) => ({ row, target: Number(row.count.value) }));
+      if (targets.some(({ row, target }) => !row.count.value.trim() || !Number.isSafeInteger(target) || target < 0)) {
+        throw new Error('Количество должно быть целым числом от 0');
+      }
+      saving = true;
+      name.input.disabled = true;
+      rows.forEach((row) => { row.count.disabled = true; });
+      try {
+        await api.update('tools', tool.id, { name: nextName });
+        for (const { row, target } of targets) {
+          // Keep successful changes in the local list so a retry does not duplicate them.
+          row.items.sort((a, b) => (a.label ? 1 : 0) - (b.label ? 1 : 0));
+          while (row.items.length > target) {
+            await api.remove('tool-instances', row.items[0].id);
+            row.items.shift();
+          }
+          while (row.items.length < target) {
+            const instance = await api.create('tool-instances', { toolId: tool.id, spaceId: row.spaceId });
+            row.items.push(instance);
+          }
+        }
+        await render(mount, api);
+      } catch (error) {
+        await render(mount, api);
+        throw error;
+      } finally {
+        saving = false;
+        name.input.disabled = false;
+        rows.forEach((row) => { row.count.disabled = false; });
+      }
+    },
+  });
+}
+
 function openCreate(mount, api) {
   let spacesCache = [];
   const rowsWrap = el('div', {});
@@ -119,7 +186,7 @@ function openCreate(mount, api) {
 
   const addRow = () => {
     const sel = el('select', {});
-    sel.append(el('option', { value: '' }, 'Общие (без пространства)'));
+    sel.append(el('option', { value: '' }, 'Без пространства'));
     for (const s of spacesCache) sel.append(el('option', { value: s.id }, s.name));
     const count = el('input', { type: 'number', min: '0', value: '1', style: 'width:80px' });
     rowsWrap.append(el('div', { class: 'field', style: 'display:flex;gap:8px;align-items:flex-end' }, [
@@ -151,7 +218,7 @@ function openCreate(mount, api) {
 function addInstance(tool, spaces, mount, api) {
   const label = textField('Название экземпляра (необязательно)');
   const sel = el('select', {});
-  sel.append(el('option', { value: '' }, 'Общие (без пространства)'));
+  sel.append(el('option', { value: '' }, 'Без пространства'));
   for (const s of spaces) sel.append(el('option', { value: s.id }, s.name));
   openModal({
     title: `Экземпляр: ${tool.name}`,
