@@ -59,12 +59,14 @@ try {
         $envJson = @{
             NODE_ENV = 'production'; PORT = '3000'
             VIBE_API_KEY = $settings['VIBE_API_KEY']; VIBE_BASE_URL = $baseUrl
-            DATA_DIR = '/opt/data'
+            DATA_DIR = '/opt/data/syncpoint'
         } | ConvertTo-Json -Compress
         $fields = @{
             runtime = 'node20'; install = 'cd /opt/app && npm ci --omit=dev'
             start = 'cd /opt/app && node src/server.js'; port = '3000'
             cleanDeploy = 'true'; env = $envJson
+            preStart = 'cd /opt/app && node src/storage/migrateData.js'
+            dataDirs = '["/opt/data/syncpoint"]'; dataDirsRecursive = 'true'
         }
         foreach ($key in $fields.Keys) {
             $form.Add((New-Object System.Net.Http.StringContent([string]$fields[$key])), $key)

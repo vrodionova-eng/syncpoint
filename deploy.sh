@@ -41,7 +41,7 @@ print(json.dumps({
   'PORT': '3000',
   'VIBE_API_KEY': os.environ['VIBE_API_KEY'],
   'VIBE_BASE_URL': os.environ.get('VIBE_BASE_URL', 'https://vibecode.bitrix24.tech/v1'),
-  'DATA_DIR': '/opt/data',
+  'DATA_DIR': '/opt/data/syncpoint',
 }))
 ")
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" \
@@ -52,6 +52,9 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" \
   -F "start=cd /opt/app && node src/server.js" \
   -F "port=3000" \
   -F "cleanDeploy=true" \
+  -F 'preStart=cd /opt/app && node src/storage/migrateData.js' \
+  -F 'dataDirs=["/opt/data/syncpoint"]' \
+  -F 'dataDirsRecursive=true' \
   -F "env=$ENV_JSON")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -1)

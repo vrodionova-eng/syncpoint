@@ -15,12 +15,17 @@ export function el(tag, attrs = {}, children = []) {
 export function openModal({ title, body, submitLabel = 'Сохранить', onSubmit }) {
   const root = document.getElementById('modal-root');
   const errBox = el('div', { class: 'error' });
-  const close = () => (root.innerHTML = '');
+  let saving = false;
+  const close = () => { if (!saving) root.innerHTML = ''; };
 
   const submit = el('button', { class: 'btn', onclick: async () => {
+    if (saving) return;
+    saving = true;
+    submit.disabled = true;
     errBox.textContent = '';
-    try { await onSubmit(); close(); }
+    try { await onSubmit(); saving = false; close(); }
     catch (e) { errBox.textContent = e.message; }
+    finally { saving = false; submit.disabled = false; }
   } }, submitLabel);
 
   const modal = el('div', { class: 'modal-bg', onclick: (e) => { if (e.target.classList.contains('modal-bg')) close(); } }, [
