@@ -174,7 +174,8 @@ async function openCategories(mount, api) {
   let categories;
   try { categories = await api.list('service-categories'); }
   catch (e) { alert(e.message); return; }
-  const list = el('div', {});
+  const list = el('div', { class: 'category-list' });
+  if (!categories.length) list.append(el('div', { class: 'muted category-empty' }, 'Категорий пока нет. Добавьте первую ниже.'));
   const name = textField('Название новой категории');
   const error = el('div', { class: 'error' });
   const add = el('button', { class: 'btn secondary', onclick: async () => {
@@ -188,21 +189,56 @@ async function openCategories(mount, api) {
   } }, 'Добавить категорию');
   for (const c of categories) {
     const field = textField('Название категории', c.name);
+    const title = el('span', { class: 'category-name' }, c.name);
+    const editor = el('div', { class: 'category-editor', hidden: '' });
+    const confirmation = el('div', { class: 'category-confirm', hidden: '' });
+    const row = el('div', { class: 'category-card' });
     const save = el('button', { class: 'btn link', onclick: async () => {
       save.disabled = true;
-      try { await api.update('service-categories', c.id, { name: field.input.value }); error.textContent = ''; await render(mount, api); }
+      try {
+        const updated = await api.update('service-categories', c.id, { name: field.input.value });
+        c.name = updated.name;
+        title.textContent = c.name;
+        editor.hidden = true;
+        error.textContent = '';
+        await render(mount, api);
+      }
       catch (e) { error.textContent = e.message; }
       finally { save.disabled = false; }
     } }, 'Сохранить');
-    const remove = el('button', { class: 'btn link', onclick: async () => {
-      if (!confirm('Удалить категорию?')) return;
-      remove.disabled = true;
-      try { await api.remove('service-categories', c.id); await render(mount, api); await openCategories(mount, api); }
+    const edit = el('button', { class: 'btn link', onclick: () => {
+      confirmation.hidden = true;
+      editor.hidden = false;
+      field.input.value = c.name;
+      field.input.focus();
+    } }, 'Изменить');
+    const question = el('div', {});
+    const yes = el('button', { class: 'btn danger', onclick: async () => {
+      yes.disabled = true;
+      try {
+        await api.remove('service-categories', c.id);
+        row.remove();
+        error.textContent = '';
+        if (!list.children.length) list.append(el('div', { class: 'muted category-empty' }, 'Категорий пока нет. Добавьте первую ниже.'));
+        await render(mount, api);
+      }
       catch (e) { error.textContent = e.message; }
-      finally { remove.disabled = false; }
-    } }, 'Удалить');
-    list.append(el('div', {}, [field.field, save, remove]));
+      finally { yes.disabled = false; }
+    } }, 'Да, удалить');
+    const remove = el('button', { class: 'category-delete', title: 'Удалить категорию', 'aria-label': `Удалить категорию ${c.name}`, onclick: () => {
+      editor.hidden = true;
+      question.textContent = `Удалить категорию «${c.name}»?`;
+      confirmation.hidden = false;
+    } });
+    remove.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
+    editor.append(field.field, el('div', { class: 'category-actions' }, [save,
+      el('button', { class: 'btn link', onclick: () => { editor.hidden = true; } }, 'Отмена')]));
+    confirmation.append(question, el('div', { class: 'category-actions' }, [yes,
+      el('button', { class: 'btn secondary', onclick: () => { confirmation.hidden = true; } }, 'Нет, оставить')]));
+    row.append(el('div', { class: 'category-line' }, [title, edit, remove]), editor, confirmation);
+    list.append(row);
   }
-  openModal({ title: 'Категории услуг', body: el('div', {}, [list, name.field, add, error]),
+  openModal({ title: 'Категории услуг', body: el('div', {}, [list,
+    el('div', { class: 'category-create' }, [name.field, add]), error]),
     submitLabel: 'Готово', onSubmit: async () => {} });
 }

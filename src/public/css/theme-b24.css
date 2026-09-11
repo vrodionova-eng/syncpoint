@@ -58,6 +58,18 @@ h1 { font-size: 22px; margin: 0 0 20px; }
 .tool-requirement label span { overflow-wrap: anywhere; }
 .tool-requirement input:disabled { background: var(--b24-bg); color: var(--b24-muted); }
 .muted { color: var(--b24-muted); font-size: 14px; }
+.category-list { display: grid; gap: 8px; margin-bottom: 20px; }
+.category-card { border: 1px solid var(--b24-border); border-radius: var(--radius); padding: 12px; }
+.category-line { display: flex; align-items: center; gap: 8px; }
+.category-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.category-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.category-delete { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 34px; height: 34px; border: 0; border-radius: 6px; background: transparent; color: var(--b24-muted); cursor: pointer; }
+.category-delete:hover { color: var(--b24-danger); background: #fff0ed; }
+.category-delete:focus-visible { outline: 2px solid var(--b24-primary); outline-offset: 2px; }
+.category-editor, .category-confirm { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--b24-border); }
+.category-confirm { font-size: 14px; overflow-wrap: anywhere; }
+.category-create { padding-top: 16px; border-top: 1px solid var(--b24-border); }
+.category-empty { padding: 12px 0; }
 
 /* Календарь: неделя одной точки */
 .cal-wrap { background: var(--b24-surface); border: 1px solid var(--b24-border);
