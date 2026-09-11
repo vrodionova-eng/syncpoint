@@ -106,9 +106,12 @@ async function assertNoConflict(workPointId, startMs, endMs, excludeId = null) {
 // в других записях на это время. Нехватка — предупреждение, не блокировка.
 async function assignTools(spaceId, services, startMs, endMs, excludeId) {
   const neededToolIds = [];
+  const neededCounts = new Map();
   for (const s of services) {
     for (const tid of s.requiredToolIds || []) {
       if (!neededToolIds.includes(tid)) neededToolIds.push(tid);
+      // Services in one booking share tools; reserve the largest requirement.
+      neededCounts.set(tid, Math.max(neededCounts.get(tid) || 0, s.requiredToolCounts?.[tid] ?? 1));
     }
   }
   if (!neededToolIds.length) return { toolInstanceIds: [], warnings: [] };
@@ -138,12 +141,13 @@ async function assignTools(spaceId, services, startMs, endMs, excludeId) {
     const candidates = instances
       .filter((i) => i.toolId === tid && (i.spaceId === spaceId || i.spaceId == null) && !busy.has(i.id))
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-    const own = candidates.find((i) => i.spaceId === spaceId);
-    const pick = own || candidates[0];
-    if (pick) {
+    candidates.sort((a, b) => Number(b.spaceId === spaceId) - Number(a.spaceId === spaceId));
+    const picks = candidates.slice(0, neededCounts.get(tid));
+    for (const pick of picks) {
       assigned.push(pick.id);
       busy.add(pick.id); // не выдать один экземпляр дважды внутри одной записи
-    } else {
+    }
+    if (picks.length < neededCounts.get(tid)) {
       warnings.push(`Не хватает инструмента «${toolName.get(tid) || tid}» для услуги «${serviceByTool.get(tid)}»`);
     }
   }

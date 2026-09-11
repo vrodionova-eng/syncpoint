@@ -18,6 +18,25 @@ beforeEach(async () => {
   tool = (await toolsService.createWithDistribution({ name: 'Фен', distribution: [] })).tool;
 });
 
+test('tool quantities survive create and update, and unchecked tools are removed', async () => {
+  const body = { name: 'Мойка', isComposite: false, priceType: 'fixed', price: 40,
+    requiredToolIds: [tool.id], requiredToolCounts: { [tool.id]: 3 } };
+  const service = await servicesService.create(body);
+  assert.equal((await servicesService.get(service.id)).requiredToolCounts[tool.id], 3);
+  await servicesService.update(service.id, { ...body, requiredToolCounts: { [tool.id]: 2 } });
+  assert.equal((await servicesService.get(service.id)).requiredToolCounts[tool.id], 2);
+  const cleared = await servicesService.update(service.id, { ...body, requiredToolIds: [] });
+  assert.deepEqual(cleared.requiredToolCounts, {});
+});
+
+test('legacy tool selection defaults to one and invalid quantities are rejected', async () => {
+  const body = { name: 'Мойка', priceType: 'fixed', price: 40, requiredToolIds: [tool.id] };
+  assert.equal((await servicesService.create(body)).requiredToolCounts[tool.id], 1);
+  for (const count of [0, -1, 1.5, '2', null]) {
+    await assert.rejects(servicesService.create({ ...body, requiredToolCounts: { [tool.id]: count } }), /Количество/);
+  }
+});
+
 test('простая услуга с фикс-ценой', async () => {
   const s = await servicesService.create({ name: 'Смыв', isComposite: false, priceType: 'fixed', price: 40 });
   assert.equal(s.price, 40);

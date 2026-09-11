@@ -17,10 +17,11 @@ function num(v, label) {
 }
 
 async function validateTools(requiredToolIds = []) {
+  if (!Array.isArray(requiredToolIds)) throw new ValidationError('Некорректный список инструментов');
   for (const id of requiredToolIds) {
     if (!(await toolsRepo.get(id))) throw new ValidationError('Инструмент не найден');
   }
-  return [...requiredToolIds];
+  return [...new Set(requiredToolIds)];
 }
 
 async function validateChildren(childServiceIds = [], selfId = null) {
@@ -49,6 +50,14 @@ async function assertNoCycle(childIds, selfId) {
 async function buildService(body, selfId = null) {
   const name = cleanName(body.name);
   const requiredToolIds = await validateTools(body.requiredToolIds);
+  const counts = body.requiredToolCounts ?? {};
+  if (typeof counts !== 'object' || Array.isArray(counts)) throw new ValidationError('Некорректное количество инструментов');
+  const requiredToolCounts = {};
+  for (const id of requiredToolIds) {
+    const count = Object.hasOwn(counts, id) ? counts[id] : 1;
+    if (!Number.isSafeInteger(count) || count < 1) throw new ValidationError('Количество инструмента должно быть целым числом от 1');
+    requiredToolCounts[id] = count;
+  }
   const isComposite = Boolean(body.isComposite);
 
   if (isComposite) {
@@ -63,7 +72,7 @@ async function buildService(body, selfId = null) {
       priceType: null,
       price: compositeSum === 'fixed' ? num(body.price, 'фикс') : null,
       priceMin: null, priceMax: null,
-      requiredToolIds,
+      requiredToolIds, requiredToolCounts,
     };
   }
 
@@ -75,7 +84,7 @@ async function buildService(body, selfId = null) {
     return {
       name, isComposite: false, priceType: 'fixed',
       price: num(body.price, 'фикс'), priceMin: null, priceMax: null,
-      compositeSum: null, childServiceIds: [], requiredToolIds,
+      compositeSum: null, childServiceIds: [], requiredToolIds, requiredToolCounts,
     };
   }
   const priceMin = num(body.priceMin, 'мин');
@@ -84,7 +93,7 @@ async function buildService(body, selfId = null) {
   return {
     name, isComposite: false, priceType: 'range',
     price: null, priceMin, priceMax,
-    compositeSum: null, childServiceIds: [], requiredToolIds,
+    compositeSum: null, childServiceIds: [], requiredToolIds, requiredToolCounts,
   };
 }
 

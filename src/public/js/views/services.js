@@ -65,7 +65,13 @@ async function openForm(mount, api, item) {
   const toolChecks = tools.map((t) => {
     const cb = el('input', { type: 'checkbox', value: t.id });
     if (item?.requiredToolIds?.includes(t.id)) cb.checked = true;
-    return { id: t.id, cb, node: el('label', { style: 'display:flex;align-items:center;gap:8px;padding:2px 4px;justify-content:flex-start' }, [cb, el('span', {}, t.name)]) };
+    const count = el('input', { type: 'number', min: '1', step: '1', value: item?.requiredToolCounts?.[t.id] ?? 1,
+      'aria-label': `Количество: ${t.name}` });
+    count.disabled = !cb.checked;
+    cb.addEventListener('change', () => { count.disabled = !cb.checked; });
+    return { id: t.id, cb, count, node: el('div', { class: 'tool-requirement' }, [
+      el('label', {}, [cb, el('span', {}, t.name)]), count,
+    ]) };
   });
 
   const simpleBox = el('div', {}, [
@@ -97,6 +103,7 @@ async function openForm(mount, api, item) {
     simpleBox,
     compositeBox,
     el('div', { class: 'field' }, [el('label', {}, 'Нужные инструменты'),
+      el('div', { class: 'muted' }, 'Отметьте инструменты и укажите количество экземпляров.'),
       el('div', { class: 'checklist' }, toolChecks.length ? toolChecks.map((c) => c.node) : [el('span', { class: 'muted' }, 'нет инструментов')])]),
   ]);
   setTimeout(syncVisibility, 0);
@@ -106,6 +113,12 @@ async function openForm(mount, api, item) {
     body,
     onSubmit: async () => {
       const requiredToolIds = toolChecks.filter((c) => c.cb.checked).map((c) => c.id);
+      const requiredToolCounts = {};
+      for (const c of toolChecks.filter((c) => c.cb.checked)) {
+        const count = Number(c.count.value);
+        if (!Number.isSafeInteger(count) || count < 1) throw new Error('Количество инструмента должно быть целым числом от 1');
+        requiredToolCounts[c.id] = count;
+      }
       let data;
       if (kind.value === 'composite') {
         data = {
@@ -113,7 +126,7 @@ async function openForm(mount, api, item) {
           compositeSum: compositeSum.value,
           childServiceIds: childChecks.filter((c) => c.cb.checked).map((c) => c.id),
           price: compositeSum.value === 'fixed' ? Number(price.value) : null,
-          requiredToolIds,
+          requiredToolIds, requiredToolCounts,
         };
       } else {
         data = {
@@ -121,7 +134,7 @@ async function openForm(mount, api, item) {
           price: priceType.value === 'fixed' ? Number(price.value) : null,
           priceMin: priceType.value === 'range' ? Number(priceMin.value) : null,
           priceMax: priceType.value === 'range' ? Number(priceMax.value) : null,
-          requiredToolIds,
+          requiredToolIds, requiredToolCounts,
         };
       }
       if (item) await api.update('services', item.id, data);
