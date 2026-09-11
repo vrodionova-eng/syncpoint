@@ -1,5 +1,6 @@
 import { bookingsRepo } from '../repositories/bookingsRepo.js';
 import { workPointsRepo } from '../repositories/workPointsRepo.js';
+import { spacesRepo } from '../repositories/spacesRepo.js';
 import { employeesRepo } from '../repositories/employeesRepo.js';
 import { servicesRepo } from '../repositories/servicesRepo.js';
 import { toolsRepo } from '../repositories/toolsRepo.js';
@@ -7,230 +8,113 @@ import { toolInstancesRepo } from '../repositories/toolInstancesRepo.js';
 import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
 import { defaultPrice } from '../public/js/servicePrice.js';
 
-const MIN_DURATION_MS = 5 * 60 * 1000;
+const overlaps = (a, b, c, d) => a < d && c < b;
+const summary = (b) => ({ id: b.id, start: b.start, end: b.end, workPointId: b.workPointId,
+  spaceId: b.spaceId, name: b.client?.name || 'Запись', href: `#bookings/${encodeURIComponent(b.id)}` });
 
-function parseTime(v, label) {
-  const t = Date.parse(v);
-  if (!Number.isFinite(t)) throw new ValidationError(`Некорректная дата: ${label}`);
-  return t;
-}
-
-function overlaps(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && bStart < aEnd;
-}
-
-
-function isEstimatedPrice(svc, byId) {
-  if (!svc) return false;
-  if (svc.isComposite) {
-    if (svc.compositeSum === 'manual') return true;
-    if (svc.compositeSum === 'auto') return (svc.childServiceIds || []).some((id) => isEstimatedPrice(byId.get(id), byId));
-    return false;
-  }
-  return svc.priceType === 'range';
-}
-
-async function validateBody(body) {
-  const workPoint = await workPointsRepo.get(body.workPointId);
-  if (!workPoint) throw new ValidationError('Рабочая точка не найдена');
-
-  const start = parseTime(body.start, 'начало');
-  const end = parseTime(body.end, 'конец');
-  if (end <= start) throw new ValidationError('Конец должен быть позже начала');
-  if (end - start < MIN_DURATION_MS) throw new ValidationError('Минимальная длительность записи — 5 минут');
-
-  const employeeIds = Array.isArray(body.employeeIds) ? [...new Set(body.employeeIds)] : [];
-  if (!employeeIds.length) throw new ValidationError('Выберите хотя бы одного участника');
-  for (const id of employeeIds) {
-    if (!(await employeesRepo.get(id))) throw new ValidationError('Сотрудник не найден');
-  }
-
-  const serviceIds = Array.isArray(body.serviceIds) ? [...new Set(body.serviceIds)] : [];
+async function validate(body, preview = false) {
+  const workPoint = body.workPointId ? await workPointsRepo.get(body.workPointId) : null;
+  if (body.workPointId && !workPoint) throw new ValidationError('Рабочая точка не найдена');
+  const spaceId = workPoint?.spaceId || body.spaceId;
+  if (!spaceId || !(await spacesRepo.get(spaceId))) throw new ValidationError('Выберите пространство');
+  if (workPoint && body.spaceId && body.spaceId !== spaceId) throw new ValidationError('Точка не принадлежит пространству');
+  const start = Date.parse(body.start), end = Date.parse(body.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) throw new ValidationError('Укажите дату и время');
+  if (end - start < 5 * 60000) throw new ValidationError('Конец должен быть позже начала минимум на 5 минут');
+  const serviceIds = [...new Set(Array.isArray(body.serviceIds) ? body.serviceIds : [])];
+  const catalog = await servicesRepo.list();
+  const byId = new Map(catalog.map((s) => [s.id, s]));
   if (!serviceIds.length) throw new ValidationError('Выберите хотя бы одну услугу');
-  const services = [];
-  for (const id of serviceIds) {
-    const s = await servicesRepo.get(id);
-    if (!s) throw new ValidationError('Услуга не найдена');
-    services.push(s);
+  const services = serviceIds.map((id) => {
+    if (!byId.has(id)) throw new ValidationError('Услуга не найдена');
+    return byId.get(id);
+  });
+  const employeeIds = [...new Set(Array.isArray(body.employeeIds) ? body.employeeIds : [])];
+  if (!preview) {
+    if (!employeeIds.length) throw new ValidationError('Выберите исполнителя');
+    for (const id of employeeIds) if (!(await employeesRepo.get(id))) throw new ValidationError('Сотрудник не найден');
   }
-
+  const expanded = new Map();
+  function visit(s) {
+    if (!s || expanded.has(s.id)) return;
+    expanded.set(s.id, s);
+    for (const id of s.childServiceIds || []) visit(byId.get(id));
+  }
+  services.forEach(visit);
+  const servicePrices = {};
+  for (const [id, value] of Object.entries(body.servicePrices || {})) {
+    const s = expanded.get(id);
+    if (!s?.isComposite || s.compositeSum !== 'manual') throw new ValidationError('Цену можно менять только для услуги «Указать при записи»');
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new ValidationError('Некорректная цена услуги');
+    servicePrices[id] = value;
+  }
+  const priced = new Map(byId);
+  for (const [id, price] of Object.entries(servicePrices)) priced.set(id, { ...byId.get(id), compositeSum: 'fixed', price });
+  let priceTotal = services.reduce((sum, s) => sum + defaultPrice(priced.get(s.id), priced), 0);
+  // Preserve old explicitly overridden totals only on existing bookings.
   let priceOverride = null;
-  if (body.priceOverride !== null && body.priceOverride !== undefined && body.priceOverride !== '') {
+  if (body.priceOverride != null && body.priceOverride !== '') {
     priceOverride = Number(body.priceOverride);
     if (!Number.isFinite(priceOverride) || priceOverride < 0) throw new ValidationError('Некорректная сумма');
+    priceTotal = priceOverride;
   }
-
   let client = null;
-  if (body.client && body.client.contactId != null) {
-    client = { contactId: Number(body.client.contactId), name: String(body.client.name || '').trim() };
+  if (body.client) {
+    const type = body.client.type || (body.client.companyId ? 'company' : 'contact');
+    const id = Number(body.client.id ?? body.client.contactId ?? body.client.companyId);
+    if (!['contact', 'company'].includes(type) || !Number.isSafeInteger(id) || id <= 0) throw new ValidationError('Выберите клиента из списка CRM');
+    client = { type, id, name: String(body.client.name || '').trim(), [type === 'contact' ? 'contactId' : 'companyId']: id };
   }
-
-  return {
-    workPoint,
-    startIso: new Date(start).toISOString(),
-    endIso: new Date(end).toISOString(),
-    employeeIds,
-    serviceIds,
-    services,
-    priceOverride,
-    client,
-    note: body.note ? String(body.note).trim() : null,
-  };
+  return { workPointId: workPoint?.id || null, spaceId, start: new Date(start).toISOString(), end: new Date(end).toISOString(),
+    employeeIds, serviceIds, servicePrices, priceOverride, priceTotal, client, note: String(body.note || '').trim() || null,
+    expanded: [...expanded.values()] };
 }
 
-async function assertNoConflict(workPointId, startMs, endMs, excludeId = null) {
-  const all = await bookingsRepo.list();
-  for (const b of all) {
-    if (b.id === excludeId || b.workPointId !== workPointId) continue;
-    if (overlaps(startMs, endMs, Date.parse(b.start), Date.parse(b.end))) {
-      const fmt = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      throw new ConflictError(`Точка занята: с ${fmt(b.start)} до ${fmt(b.end)}`);
-    }
+async function availability(v, excludeId) {
+  const [all, instances, tools] = await Promise.all([bookingsRepo.list(), toolInstancesRepo.list(), toolsRepo.list()]);
+  const overlapping = all.filter((b) => b.id !== excludeId && overlaps(Date.parse(v.start), Date.parse(v.end), Date.parse(b.start), Date.parse(b.end)));
+  const conflicts = overlapping.filter((b) => b.spaceId === v.spaceId && (!v.workPointId || !b.workPointId || v.workPointId === b.workPointId)).map(summary);
+  const needs = new Map();
+  for (const s of v.expanded) for (const id of s.requiredToolIds || []) {
+    needs.set(id, Math.max(needs.get(id) || 0, s.requiredToolCounts?.[id] ?? 1));
   }
+  const busy = new Set(overlapping.flatMap((b) => b.toolInstanceIds || []));
+  const assigned = [], warnings = [], requirements = [];
+  for (const [toolId, required] of needs) {
+    const pool = instances.filter((i) => i.toolId === toolId && (i.spaceId === v.spaceId || i.spaceId == null));
+    const free = pool.filter((i) => !busy.has(i.id)).sort((a, b) => Number(b.spaceId === v.spaceId) - Number(a.spaceId === v.spaceId));
+    const reservations = overlapping.filter((b) => pool.some((i) => (b.toolInstanceIds || []).includes(i.id))).map(summary);
+    const row = { toolId, name: tools.find((t) => t.id === toolId)?.name || 'Инструмент', required,
+      available: free.length, reserved: pool.length - free.length, total: pool.length, bookings: reservations };
+    requirements.push(row);
+    assigned.push(...free.slice(0, required).map((i) => i.id));
+    if (free.length < required) warnings.push(`«${row.name}»: нужно ${required}, свободно ${free.length}, забронировано ${row.reserved}`);
+  }
+  return { conflicts, requirements, warnings, toolInstanceIds: assigned, priceTotal: v.priceTotal };
 }
 
-// Мягкий подбор экземпляров: для каждого нужного инструмента берём первый
-// свободный экземпляр пространства точки (или общий, spaceId = null), не занятый
-// в других записях на это время. Нехватка — предупреждение, не блокировка.
-async function assignTools(spaceId, services, startMs, endMs, excludeId) {
-  const neededToolIds = [];
-  const neededCounts = new Map();
-  for (const s of services) {
-    for (const tid of s.requiredToolIds || []) {
-      if (!neededToolIds.includes(tid)) neededToolIds.push(tid);
-      // Services in one booking share tools; reserve the largest requirement.
-      neededCounts.set(tid, Math.max(neededCounts.get(tid) || 0, s.requiredToolCounts?.[tid] ?? 1));
-    }
-  }
-  if (!neededToolIds.length) return { toolInstanceIds: [], warnings: [] };
-
-  const [instances, all, tools] = await Promise.all([
-    toolInstancesRepo.list(), bookingsRepo.list(), toolsRepo.list(),
-  ]);
-  const toolName = new Map(tools.map((t) => [t.id, t.name]));
-  const serviceByTool = new Map();
-  for (const s of services) {
-    for (const tid of s.requiredToolIds || []) {
-      if (!serviceByTool.has(tid)) serviceByTool.set(tid, s.name);
-    }
-  }
-
-  const busy = new Set();
-  for (const b of all) {
-    if (b.id === excludeId) continue;
-    if (overlaps(startMs, endMs, Date.parse(b.start), Date.parse(b.end))) {
-      for (const iid of b.toolInstanceIds || []) busy.add(iid);
-    }
-  }
-
-  const assigned = [];
-  const warnings = [];
-  for (const tid of neededToolIds) {
-    const candidates = instances
-      .filter((i) => i.toolId === tid && (i.spaceId === spaceId || i.spaceId == null) && !busy.has(i.id))
-      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
-    candidates.sort((a, b) => Number(b.spaceId === spaceId) - Number(a.spaceId === spaceId));
-    const picks = candidates.slice(0, neededCounts.get(tid));
-    for (const pick of picks) {
-      assigned.push(pick.id);
-      busy.add(pick.id); // не выдать один экземпляр дважды внутри одной записи
-    }
-    if (picks.length < neededCounts.get(tid)) {
-      warnings.push(`Не хватает инструмента «${toolName.get(tid) || tid}» для услуги «${serviceByTool.get(tid)}»`);
-    }
-  }
-  return { toolInstanceIds: assigned, warnings };
+async function save(body, id) {
+  const existing = id ? await bookingsRepo.get(id) : null;
+  if (id && !existing) throw new NotFoundError('Запись не найдена');
+  const v = await validate(body);
+  const result = await availability(v, id);
+  if (result.conflicts.length) throw new ConflictError('Выбранное время занято: измените время, пространство или рабочую точку');
+  const { expanded, ...data } = v;
+  const record = { ...data, toolInstanceIds: result.toolInstanceIds, warnings: result.warnings };
+  const booking = id ? await bookingsRepo.update(id, record) : await bookingsRepo.create(record);
+  return { booking, warnings: result.warnings, requirements: result.requirements, priceEstimated: false };
 }
-
-async function computePrice(services, priceOverride) {
-  if (priceOverride != null) return { priceTotal: priceOverride, priceEstimated: false };
-  const byId = new Map((await servicesRepo.list()).map((s) => [s.id, s]));
-  return {
-    priceTotal: services.reduce((sum, s) => sum + defaultPrice(s, byId), 0),
-    priceEstimated: services.some((s) => isEstimatedPrice(s, byId)),
-  };
-}
-
+// One process owns the JSON store. Serialize the check + reserve + save sequence.
+let queue = Promise.resolve();
+function mutate(fn) { const next = queue.then(fn); queue = next.catch(() => {}); return next; }
 export const bookingsService = {
   async list({ from, to, workPointId, spaceId } = {}) {
-    let all = await bookingsRepo.list();
-    if (workPointId) all = all.filter((b) => b.workPointId === workPointId);
-    if (spaceId) all = all.filter((b) => b.spaceId === spaceId);
-    const fromMs = from ? Date.parse(from) : null;
-    const toMs = to ? Date.parse(to) : null;
-    if (Number.isFinite(fromMs)) all = all.filter((b) => Date.parse(b.end) > fromMs);
-    if (Number.isFinite(toMs)) all = all.filter((b) => Date.parse(b.start) < toMs);
-    return all.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+    return (await bookingsRepo.list()).filter((b) => (!workPointId || b.workPointId === workPointId) && (!spaceId || b.spaceId === spaceId)
+      && (!from || Date.parse(b.end) > Date.parse(from)) && (!to || Date.parse(b.start) < Date.parse(to))).sort((a, b) => a.start.localeCompare(b.start));
   },
-
-  async get(id) {
-    const b = await bookingsRepo.get(id);
-    if (!b) throw new NotFoundError('Запись не найдена');
-    return b;
-  },
-
-  async create(body) {
-    const v = await validateBody(body);
-    const startMs = Date.parse(v.startIso);
-    const endMs = Date.parse(v.endIso);
-    await assertNoConflict(v.workPoint.id, startMs, endMs);
-
-    const { toolInstanceIds, warnings } = await assignTools(
-      v.workPoint.spaceId, v.services, startMs, endMs, null,
-    );
-    const { priceTotal, priceEstimated } = await computePrice(v.services, v.priceOverride);
-
-    const booking = await bookingsRepo.create({
-      workPointId: v.workPoint.id,
-      spaceId: v.workPoint.spaceId,
-      start: v.startIso,
-      end: v.endIso,
-      employeeIds: v.employeeIds,
-      serviceIds: v.serviceIds,
-      priceOverride: v.priceOverride,
-      priceTotal,
-      client: v.client,
-      toolInstanceIds,
-      warnings,
-      note: v.note,
-    });
-    return { booking, priceEstimated, warnings };
-  },
-
-  async update(id, body) {
-    const existing = await bookingsRepo.get(id);
-    if (!existing) throw new NotFoundError('Запись не найдена');
-
-    const v = await validateBody(body);
-    const startMs = Date.parse(v.startIso);
-    const endMs = Date.parse(v.endIso);
-    await assertNoConflict(v.workPoint.id, startMs, endMs, id);
-
-    const { toolInstanceIds, warnings } = await assignTools(
-      v.workPoint.spaceId, v.services, startMs, endMs, id,
-    );
-    const { priceTotal, priceEstimated } = await computePrice(v.services, v.priceOverride);
-
-    const booking = await bookingsRepo.update(id, {
-      workPointId: v.workPoint.id,
-      spaceId: v.workPoint.spaceId,
-      start: v.startIso,
-      end: v.endIso,
-      employeeIds: v.employeeIds,
-      serviceIds: v.serviceIds,
-      priceOverride: v.priceOverride,
-      priceTotal,
-      client: v.client,
-      toolInstanceIds,
-      warnings,
-      note: v.note,
-    });
-    return { booking, priceEstimated, warnings };
-  },
-
-  async remove(id) {
-    const ok = await bookingsRepo.remove(id);
-    if (!ok) throw new NotFoundError('Запись не найдена');
-    return { id };
-  },
+  async get(id) { const b = await bookingsRepo.get(id); if (!b) throw new NotFoundError('Запись не найдена'); return b; },
+  async preview(body) { return availability(await validate(body, true), body.excludeId); },
+  create: (body) => mutate(() => save(body)),
+  update: (id, body) => mutate(() => save(body, id)),
+  remove: (id) => mutate(async () => { if (!(await bookingsRepo.remove(id))) throw new NotFoundError('Запись не найдена'); return { id }; }),
 };

@@ -1,4 +1,5 @@
 import { spacesRepo } from '../repositories/spacesRepo.js';
+import { bookingsRepo } from '../repositories/bookingsRepo.js';
 import { workPointsRepo } from '../repositories/workPointsRepo.js';
 import { toolInstancesRepo } from '../repositories/toolInstancesRepo.js';
 import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
@@ -24,6 +25,7 @@ export const spacesService = {
     return s;
   },
   async remove(id) {
+    if ((await bookingsRepo.list()).some((b) => b.spaceId === id)) throw new ConflictError('Нельзя удалить: в пространстве есть записи');
     const wps = await workPointsRepo.list();
     if (wps.some((w) => w.spaceId === id)) {
       throw new ConflictError('Нельзя удалить: в пространстве есть рабочие точки');

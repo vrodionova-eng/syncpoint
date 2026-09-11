@@ -44,7 +44,7 @@ h1 { font-size: 22px; margin: 0 0 20px; }
 .banner { background: #fff6e5; border: 1px solid #ffd591; padding: 10px 14px; border-radius: var(--radius);
   margin-bottom: 16px; font-size: 14px; }
 .error { color: var(--b24-danger); font-size: 13px; margin-top: 6px; }
-.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; }
+.modal-bg { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.35); display: grid; place-items: center; }
 .modal { background: var(--b24-surface); border-radius: var(--radius); padding: 24px;
   width: 440px; max-width: 92vw; max-height: 88vh; overflow: auto; }
 .modal h2 { margin: 0 0 16px; font-size: 18px; }
@@ -93,3 +93,48 @@ h1 { font-size: 22px; margin: 0 0 20px; }
   font-size: 11px; padding: 2px 4px; overflow: hidden; cursor: pointer; z-index: 2;
   line-height: 1.25; }
 .cal-event .warn { float: right; }
+
+/* Records: week calendar and booking editor. */
+.records-calendar { background: #fff; border: 1px solid var(--b24-border); border-radius: 12px; }
+.records-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 16px; }
+.records-toolbar select { max-width: 220px; padding: 8px; border: 1px solid var(--b24-border); border-radius: 6px; }
+.records-status { margin-left: auto; font-size: 12px; }
+.records-scroll { max-height: 72vh; overflow: auto; border-top: 1px solid var(--b24-border); }
+.records-week { display: grid; grid-template-columns: 60px repeat(7, minmax(120px, 1fr)); min-width: 900px; }
+.records-day-title { position: sticky; top: 0; z-index: 5; background: #f8fafc; text-align: center; padding: 14px 4px; border-right: 1px solid #e9edf1; font-size: 13px; font-weight: 600; }
+.is-today { color: #008eb8; background: #e9faff !important; }
+.records-axis, .records-day { height: 1440px; position: relative; border-right: 1px solid #e9edf1; }
+.records-axis span { position: absolute; font-size: 11px; color: var(--b24-muted); padding: 3px 6px; }
+.records-slot { position: absolute; width: 100%; height: 30px; border: 0; border-top: 1px solid #edf0f3; background: transparent; cursor: pointer; }
+.records-slot:hover, .records-slot:focus-visible { background: #eafaff; }
+.records-event { position: absolute; z-index: 2; display: flex; flex-direction: column; text-align: left; overflow: hidden; background: #e0f4ff; border: 1px solid #b6def2; border-left: 3px solid #16a3cf; border-radius: 5px; padding: 3px 5px; color: #18465b; font: inherit; font-size: 11px; cursor: pointer; min-height: 22px; }
+.records-event:hover { background: #cceefe; z-index: 3; }
+.records-now { position: absolute; height: 2px; background: #f05252; left: 0; right: 0; z-index: 4; pointer-events: none; }
+.records-date-picker { position: relative; }
+.records-date-picker summary { cursor: pointer; padding: 8px; border: 1px solid var(--b24-border); border-radius: 6px; }
+.records-month { position: absolute; width: 300px; top: 42px; left: 0; z-index: 10; background: white; padding: 12px; border: 1px solid var(--b24-border); border-radius: 10px; box-shadow: 0 8px 30px #0002; }
+.records-month-nav { display: flex; gap: 4px; margin-bottom: 12px; }
+.records-month-nav select { min-width: 0; width: 115px; }
+.records-month-nav input { min-width: 0; width: 76px; border: 1px solid var(--b24-border); border-radius: 5px; }
+.records-month button { border: 0; border-radius: 4px; background: #f3f6f9; padding: 8px; cursor: pointer; }
+.records-month-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; font-size: 12px; }
+.records-month .outside { color: #a6b0bd; }
+.modal:has(.booking-form) { width: 720px; }
+.booking-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.booking-columns > * { min-width: 0; }
+.booking-choices { margin-top: 8px; max-height: 185px; }
+.booking-choice span { min-width: 0; overflow-wrap: anywhere; }
+.booking-choice b { color: var(--b24-text); font-weight: 500; }
+.booking-choice small { display: block; color: var(--b24-muted); margin-top: 3px; }
+.booking-choices [hidden] { display: none; }
+.booking-total { display: block; text-align: right; background: #effaff; border-radius: 8px; padding: 14px; margin: 12px 0 20px; font-size: 20px; }
+.booking-client-results { max-height: 200px; overflow: auto; }
+.booking-client-option { display: block; width: 100%; background: #f7fafc; border: 1px solid var(--b24-border); border-radius: 5px; padding: 10px; text-align: left; cursor: pointer; margin-top: 4px; }
+.booking-client-option:hover { background: #eafaff; }
+.booking-availability { border-top: 1px solid var(--b24-border); padding-top: 14px; font-size: 13px; }
+.booking-free { color: #21844c; margin-bottom: 12px; }
+.booking-tool { padding: 10px 0; }
+.booking-availability .banner { margin-top: 10px; }
+.booking-blocked { color: #a32626; background: #fff0f0; border-color: #ffc7c7; }
+.booking-conflict-link { display: block; color: #007da8; margin-top: 6px; }
+@media (max-width: 600px) { .booking-columns { grid-template-columns: 1fr; gap: 0; } .records-month { left: auto; right: 0; } }

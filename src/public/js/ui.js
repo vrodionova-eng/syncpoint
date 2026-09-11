@@ -29,7 +29,7 @@ export function openModal({ title, body, submitLabel = 'Сохранить', onS
   } }, submitLabel);
 
   const modal = el('div', { class: 'modal-bg', onclick: (e) => { if (e.target.classList.contains('modal-bg')) close(); } }, [
-    el('div', { class: 'modal' }, [
+    el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
       el('h2', {}, title),
       body,
       errBox,

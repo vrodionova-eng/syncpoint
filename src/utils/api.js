@@ -24,6 +24,7 @@ export async function vibe(path, { method = 'GET', body, params } = {}) {
   }
 
   const res = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
     method,
     headers: {
       'X-Api-Key': getApiKey(),
@@ -34,7 +35,7 @@ export async function vibe(path, { method = 'GET', body, params } = {}) {
 
   const data = await res.json();
 
-  if (!data.success && data.error) {
+  if (!res.ok || (!data.success && data.error)) {
     throw new Error(`[${data.error?.code || res.status}] ${data.error?.message || JSON.stringify(data.error)}`);
   }
 
@@ -63,7 +64,7 @@ export async function fetchAll(path, params = {}, limit = 50) {
     const response = await vibe(path, { params: { ...params, limit, offset } });
     const items = unwrap(response);
     results.push(...items);
-    if (items.length < limit) break;
+    if (response.meta?.hasMore === false || !items.length || (response.meta?.hasMore !== true && items.length < limit)) break;
     offset += limit;
   }
 

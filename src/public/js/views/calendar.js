@@ -1,289 +1,129 @@
-import { el, textField, openModal } from '../ui.js';
-import { defaultPrice } from '../servicePrice.js';
+import { el } from '../ui.js';
+import { openBookingForm } from './bookingForm.js';
 
-const DAY_START = 8;   // 08:00
-const DAY_END = 21;    // 21:00
-const SLOT_MIN = 30;
-
-const PALETTE = ['#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#e91e63', '#009688', '#795548', '#607d8b'];
-
-function colorFor(id) {
-  let h = 0;
-  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
-
-function startOfWeek(date) {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7; // Пн = 0
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function fmtTime(iso) {
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
+const pad = (n) => String(n).padStart(2, '0');
+export const localDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const weekOf = (date) => { const d = new Date(date); d.setDate(d.getDate() - (d.getDay() + 6) % 7); d.setHours(0, 0, 0, 0); return d; };
+const time = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
 export function calendarView(mount, api) {
-  const state = {
-    weekStart: startOfWeek(new Date()),
-    workPointId: null,
-  };
-  render(mount, api, state);
-}
-
-async function render(mount, api, state) {
-  mount.innerHTML = '';
-
-  let workPoints = [], services = [], employees = [];
-  try {
-    [workPoints, services, employees] = await Promise.all([
-      api.list('work-points'), api.list('services'), api.list('employees'),
-    ]);
-  } catch (e) { mount.append(el('div', { class: 'banner' }, e.message)); return; }
-
-  if (!workPoints.length) {
-    mount.append(el('div', { class: 'muted' }, 'Сначала добавьте рабочую точку (вкладка «Рабочие точки»).'));
-    return;
-  }
-  if (!state.workPointId || !workPoints.some((w) => w.id === state.workPointId)) {
-    state.workPointId = workPoints[0].id;
-  }
-
-  const from = new Date(state.weekStart);
-  const to = new Date(state.weekStart);
-  to.setDate(to.getDate() + 7);
-
-  let bookings = [];
-  try {
-    bookings = await api.get(
-      `bookings?workPointId=${state.workPointId}&from=${from.toISOString()}&to=${to.toISOString()}`,
-    );
-  } catch (e) { mount.append(el('div', { class: 'banner' }, e.message)); }
-
-  const svcName = new Map(services.map((s) => [s.id, s.name]));
-  const empName = new Map(employees.map((e) => [e.id, e.name]));
-
-  // --- шапка ---
-  const wpSelect = el('select', {});
-  for (const w of workPoints) {
-    const opt = el('option', { value: w.id }, w.name);
-    if (w.id === state.workPointId) opt.selected = true;
-    wpSelect.append(opt);
-  }
-  wpSelect.addEventListener('change', () => { state.workPointId = wpSelect.value; render(mount, api, state); });
-
-  const title = el('div', { class: 'cal-title' },
-    `${from.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })} — ${new Date(to - 1).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`);
-
-  const shift = (days) => () => {
-    state.weekStart.setDate(state.weekStart.getDate() + days);
-    render(mount, api, state);
-  };
-
-  mount.append(el('div', { class: 'cal-wrap' }, [
-    el('div', { class: 'cal-toolbar' }, [
-      wpSelect,
-      el('button', { class: 'btn secondary', onclick: shift(-7) }, '‹ неделя'),
-      el('button', { class: 'btn secondary', onclick: () => { state.weekStart = startOfWeek(new Date()); render(mount, api, state); } }, 'Сегодня'),
-      el('button', { class: 'btn secondary', onclick: shift(7) }, 'неделя ›'),
-      title,
-      el('button', { class: 'btn', onclick: () => openBookingForm(mount, api, state, {}) }, '+ Запись'),
-    ]),
-    buildGrid(bookings, svcName, empName, state, mount, api),
-  ]));
-}
-
-function buildGrid(bookings, svcName, empName, state, mount, api) {
-  const grid = el('div', { class: 'cal-grid' });
-  const today = new Date().toDateString();
-
-  // Шапка дней
-  grid.append(el('div', { class: 'cal-cell hour-label' }, ''));
-  const days = [];
-  for (let d = 0; d < 7; d++) {
-    const day = new Date(state.weekStart);
-    day.setDate(day.getDate() + d);
-    days.push(day);
-    grid.append(el('div', {
-      class: `cal-cell day-head${day.toDateString() === today ? ' today' : ''}`,
-    }, day.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric' })));
-  }
-
-  const slotsPerHour = 60 / SLOT_MIN;
-  const totalSlots = (DAY_END - DAY_START) * slotsPerHour;
-
-  // События по дню и слоту
-  for (let s = 0; s < totalSlots; s++) {
-    const hour = DAY_START + Math.floor((s * SLOT_MIN) / 60);
-    const minute = (s * SLOT_MIN) % 60;
-    grid.append(el('div', { class: 'cal-cell hour-label' }, minute === 0 ? `${String(hour).padStart(2, '0')}:00` : ''));
-
-    for (const day of days) {
-      const cellDate = new Date(day);
-      cellDate.setHours(hour, minute, 0, 0);
-      const cell = el('div', {
-        class: 'cal-cell slot',
-        onclick: () => openBookingForm(mount, api, state, { date: cellDate }),
-      });
-
-      const slotStart = cellDate.getTime();
-      const slotEnd = slotStart + SLOT_MIN * 60 * 1000;
-      for (const b of bookings) {
-        const bStart = Date.parse(b.start);
-        const bEnd = Date.parse(b.end);
-        if (bStart < slotEnd && slotStart < bEnd && bStart < slotStart + SLOT_MIN * 60 * 1000 && bStart >= slotStart - SLOT_MIN * 60 * 1000 && bStart < slotEnd) {
-          // отрисовываем блок только в слоте начала записи
-          if (bStart >= slotStart && bStart < slotEnd) {
-            const heightSlots = Math.max(1, Math.ceil((bEnd - bStart) / (SLOT_MIN * 60 * 1000)));
-            const names = (b.serviceIds || []).map((id) => svcName.get(id)).filter(Boolean).join(', ');
-            const ev = el('div', {
-              class: 'cal-event',
-              style: `height: calc(${heightSlots * 100}% + ${(heightSlots - 1)}px); background: ${colorFor(b.employeeIds?.[0])}`,
-              onclick: (e) => { e.stopPropagation(); openBookingForm(mount, api, state, { booking: b }); },
-            }, [
-              `${fmtTime(b.start)} ${names || '—'}`,
-              b.client?.name ? ` · ${b.client.name}` : '',
-              ...(b.warnings?.length ? [el('span', { class: 'warn', title: b.warnings.join('\n') }, ' ⚠')] : []),
-            ]);
-            cell.append(ev);
+  const root = el('div', { class: 'records-calendar' });
+  mount.append(root);
+  const state = { week: weekOf(new Date()), spaceId: '', pointId: '', active: true, version: 0, scroll: 8 * 60 };
+  const refresh = async () => {
+    const version = ++state.version;
+    const oldScroll = root.querySelector('.records-scroll');
+    if (oldScroll) state.scroll = oldScroll.scrollTop;
+    try {
+      const end = new Date(state.week); end.setDate(end.getDate() + 7);
+      const query = new URLSearchParams({ from: state.week.toISOString(), to: end.toISOString(), spaceId: state.spaceId, workPointId: state.pointId });
+      const [bookings, spaces, points, services] = await Promise.all([
+        api.get(`bookings?${query}`), api.list('spaces'), api.list('work-points'), api.list('services'),
+      ]);
+      if (!state.active || version !== state.version) return;
+      const open = (options = {}) => openBookingForm(api, { spaceId: state.spaceId, workPointId: state.pointId, ...options }, refresh);
+      const spaceSelect = el('select', { 'aria-label': 'Фильтр пространства' }, [el('option', { value: '' }, 'Все пространства'), ...spaces.map((s) => el('option', { value: s.id }, s.name))]);
+      spaceSelect.value = state.spaceId;
+      spaceSelect.onchange = () => { state.spaceId = spaceSelect.value; state.pointId = ''; refresh(); };
+      const pointSelect = el('select', { 'aria-label': 'Фильтр рабочей точки' }, [el('option', { value: '' }, 'Все рабочие точки'), ...points.filter((p) => !state.spaceId || p.spaceId === state.spaceId).map((p) => el('option', { value: p.id }, p.name))]);
+      pointSelect.value = state.pointId; pointSelect.onchange = () => { state.pointId = pointSelect.value; refresh(); };
+      const shift = (days) => { state.week.setDate(state.week.getDate() + days); refresh(); };
+      const picker = monthPicker(state.week, (date) => { state.week = weekOf(date); refresh(); });
+      const last = new Date(end); last.setDate(last.getDate() - 1);
+      const header = el('div', { class: 'records-toolbar' }, [
+        el('button', { class: 'btn', onclick: () => open() }, 'Создать запись'),
+        el('button', { class: 'btn secondary', onclick: () => { state.week = weekOf(new Date()); refresh(); } }, 'Сегодня'),
+        el('button', { class: 'btn secondary', 'aria-label': 'Предыдущая неделя', onclick: () => shift(-7) }, '‹'),
+        el('b', {}, `${state.week.toLocaleDateString('ru-RU')} — ${last.toLocaleDateString('ru-RU')}`),
+        el('button', { class: 'btn secondary', 'aria-label': 'Следующая неделя', onclick: () => shift(7) }, '›'), picker, spaceSelect, pointSelect,
+        el('span', { class: 'muted records-status' }, `Обновлено ${time(new Date())} · каждые 15 сек.`),
+      ]);
+      const grid = el('div', { class: 'records-week' });
+      grid.append(el('div', { class: 'records-day-title' }, 'Время'));
+      const days = Array.from({ length: 7 }, (_, n) => { const d = new Date(state.week); d.setDate(d.getDate() + n); return d; });
+      for (const d of days) grid.append(el('div', { class: `records-day-title ${localDate(d) === localDate(new Date()) ? 'is-today' : ''}` }, d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })));
+      const axis = el('div', { class: 'records-axis' });
+      for (let h = 0; h < 24; h++) axis.append(el('span', { style: `top:${h * 60}px` }, `${pad(h)}:00`));
+      grid.append(axis);
+      for (const d of days) {
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        const col = el('div', { class: 'records-day', 'aria-label': d.toLocaleDateString('ru-RU') });
+        for (let h = 0; h < 48; h++) col.append(el('button', { class: 'records-slot', style: `top:${h * 30}px`, 'aria-label': `Создать запись ${localDate(d)} ${pad(Math.floor(h / 2))}:${h % 2 ? '30' : '00'}`, onclick: () => {
+          const start = new Date(d); start.setHours(Math.floor(h / 2), h % 2 * 30); open({ date: start });
+        } }));
+        const events = bookings.filter((b) => Date.parse(b.start) < next.getTime() && Date.parse(b.end) > d.getTime()).sort((a, b) => a.start.localeCompare(b.start));
+        const groups = []; let group = [], groupEnd = 0;
+        for (const b of events) {
+          if (group.length && Date.parse(b.start) >= groupEnd) { groups.push(group); group = []; }
+          group.push(b); groupEnd = Math.max(group.length === 1 ? 0 : groupEnd, Date.parse(b.end));
+        }
+        if (group.length) groups.push(group);
+        for (const group of groups) {
+          const lanes = [], placed = [];
+          for (const b of group) {
+            let lane = lanes.findIndex((end) => end <= Date.parse(b.start));
+            if (lane < 0) lane = lanes.length;
+            lanes[lane] = Date.parse(b.end); placed.push({ b, lane });
+          }
+          for (const { b, lane } of placed) {
+            const startDate = new Date(Math.max(Date.parse(b.start), d.getTime()));
+            const endDate = new Date(Math.min(Date.parse(b.end), next.getTime()));
+            const top = startDate.getHours() * 60 + startDate.getMinutes();
+            const bottom = endDate.getTime() === next.getTime() ? 1440 : endDate.getHours() * 60 + endDate.getMinutes();
+            const names = (b.serviceIds || []).map((id) => services.find((s) => s.id === id)?.name || 'Услуга').join(', ');
+            const place = points.find((p) => p.id === b.workPointId)?.name || spaces.find((s) => s.id === b.spaceId)?.name || 'Без точки';
+            col.append(el('button', { class: 'records-event', title: `${names}\n${place}\n${b.client?.name || 'Без клиента'}`, style: `top:${top}px;height:${Math.max(22, bottom - top)}px;left:${lane * 100 / lanes.length}%;width:${100 / lanes.length}%`, onclick: () => open({ booking: b }) }, [
+              el('b', {}, `${time(b.start)}–${time(b.end)}`), el('span', {}, names), el('span', {}, b.client?.name || place),
+              b.warnings?.length ? el('span', {}, '⚠ Инструменты') : null,
+            ]));
           }
         }
+        if (localDate(d) === localDate(new Date())) {
+          const now = new Date(); col.append(el('div', { class: 'records-now', style: `top:${now.getHours() * 60 + now.getMinutes()}px` }));
+        }
+        grid.append(col);
       }
-      grid.append(cell);
+      const scroll = el('div', { class: 'records-scroll' }, grid);
+      root.replaceChildren(header, scroll);
+      scroll.scrollTop = state.scroll;
+    } catch (e) {
+      if (state.active && version === state.version) {
+        root.querySelector('.records-load-error')?.remove();
+        root.prepend(el('div', { class: 'banner records-load-error' }, `Не удалось обновить календарь: ${e.message}`));
+      }
     }
-  }
-  return grid;
+  };
+  refresh();
+  const id = decodeURIComponent(location.hash.match(/^#bookings\/(.+)$/)?.[1] || '');
+  if (id) api.get(`bookings/${encodeURIComponent(id)}`).then((booking) => {
+    if (state.active) { state.week = weekOf(new Date(booking.start)); state.scroll = Math.max(0, new Date(booking.start).getHours() * 60 - 60); refresh(); openBookingForm(api, { booking }, refresh); }
+  }).catch((e) => { if (state.active) root.prepend(el('div', { class: 'banner' }, e.message)); });
+  const timer = setInterval(() => {
+    if (!document.hidden && !root.querySelector('details[open]') && !root.contains(document.activeElement)) refresh();
+  }, 15000);
+  return () => { state.active = false; clearInterval(timer); };
 }
 
-async function openBookingForm(mount, api, state, { date, booking }) {
-  const [services, employees] = await Promise.all([api.list('services'), api.list('employees')]);
-
-  const baseDate = booking ? new Date(booking.start) : (date || new Date());
-  const toLocal = (d) => {
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+function monthPicker(initial, select) {
+  const details = el('details', { class: 'records-date-picker' });
+  const pane = el('div', { class: 'records-month' });
+  let cursor = new Date(initial.getFullYear(), initial.getMonth(), 1);
+  const draw = () => {
+    const month = el('select', { 'aria-label': 'Месяц' }, Array.from({ length: 12 }, (_, i) => el('option', { value: i }, new Date(2026, i, 1).toLocaleDateString('ru-RU', { month: 'long' }))));
+    month.value = cursor.getMonth();
+    const year = el('input', { type: 'number', value: cursor.getFullYear(), min: '1900', max: '2200', 'aria-label': 'Год' });
+    month.onchange = () => { cursor.setMonth(Number(month.value)); draw(); };
+    year.onchange = () => { const y = Number(year.value); if (y >= 1900 && y <= 2200) { cursor.setFullYear(y); draw(); } };
+    const shift = (n) => { cursor.setMonth(cursor.getMonth() + n); draw(); };
+    const dates = el('div', { class: 'records-month-days' });
+    for (const day of ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']) dates.append(el('span', {}, day));
+    const start = weekOf(cursor);
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start); d.setDate(d.getDate() + i);
+      dates.append(el('button', { class: `${d.getMonth() !== cursor.getMonth() ? 'outside' : ''} ${localDate(d) === localDate(new Date()) ? 'is-today' : ''}`, onclick: () => select(d) }, d.getDate()));
+    }
+    pane.replaceChildren(el('div', { class: 'records-month-nav' }, [el('button', { onclick: () => shift(-1), 'aria-label': 'Предыдущий месяц' }, '‹'), month, year,
+      el('button', { onclick: () => shift(1), 'aria-label': 'Следующий месяц' }, '›')]), dates);
   };
-  const toLocalTime = (d) => {
-    const p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getHours())}:${p(d.getMinutes())}`;
-  };
-
-  const dateInput = el('input', { type: 'date', value: toLocal(baseDate) });
-  const startInput = el('input', { type: 'time', value: booking ? toLocalTime(new Date(booking.start)) : toLocalTime(baseDate) });
-  const endDefault = booking ? new Date(booking.end) : new Date(baseDate.getTime() + 60 * 60 * 1000);
-  const endInput = el('input', { type: 'time', value: toLocalTime(endDefault) });
-
-  const empChecks = employees.map((emp) => {
-    const cb = el('input', { type: 'checkbox', value: emp.id });
-    if (booking?.employeeIds?.includes(emp.id)) cb.checked = true;
-    return { id: emp.id, cb, node: el('label', { style: 'display:flex;align-items:center;gap:8px;padding:2px 4px' }, [cb, el('span', {}, emp.name)]) };
-  });
-
-  const svcChecks = services.map((s) => {
-    const cb = el('input', { type: 'checkbox', value: s.id });
-    if (booking?.serviceIds?.includes(s.id)) cb.checked = true;
-    cb.addEventListener('change', syncPrice);
-    return { id: s.id, svc: s, cb, node: el('label', { style: 'display:flex;align-items:center;gap:8px;padding:2px 4px' }, [cb, el('span', {}, s.name)]) };
-  });
-
-  const priceInput = el('input', { type: 'number', min: '0' });
-  let priceDirty = booking?.priceOverride != null;
-  priceInput.value = booking ? (booking.priceOverride ?? booking.priceTotal ?? '') : '';
-  priceInput.addEventListener('input', () => { priceDirty = true; });
-
-  function defaultSum() {
-    return svcChecks.filter((c) => c.cb.checked).reduce((sum, c) => {
-      const s = c.svc;
-      return sum + defaultPrice(s, new Map(svcChecks.map((c) => [c.id, c.svc])));
-    }, 0);
-  }
-  function syncPrice() {
-    if (!priceDirty) priceInput.value = defaultSum();
-  }
-  syncPrice();
-
-  // Клиент CRM: поиск с выбором из подсказки или создание нового.
-  let clientSel = booking?.client || null;
-  const clientInput = el('input', { type: 'text', value: clientSel?.name || '', placeholder: 'Имя или телефон' });
-  const clientBox = el('div', {});
-  let searchTimer = null;
-  clientInput.addEventListener('input', () => {
-    clientSel = null;
-    clearTimeout(searchTimer);
-    const q = clientInput.value.trim();
-    if (q.length < 2) { clientBox.innerHTML = ''; return; }
-    searchTimer = setTimeout(async () => {
-      try {
-        const found = await api.get(`b24/crm/contacts?query=${encodeURIComponent(q)}`);
-        clientBox.innerHTML = '';
-        for (const c of found.slice(0, 5)) {
-          clientBox.append(el('div', {
-            class: 'meta', style: 'cursor:pointer;padding:2px 4px',
-            onclick: () => { clientSel = { contactId: c.id, name: c.name }; clientInput.value = c.name; clientBox.innerHTML = ''; },
-          }, `${c.name}${c.phone ? ` · ${c.phone}` : ''}`));
-        }
-        clientBox.append(el('div', {
-          class: 'meta', style: 'cursor:pointer;color:var(--b24-primary-d);padding:2px 4px',
-          onclick: async () => {
-            const created = await api.post('b24/crm/contacts', { name: q });
-            clientSel = { contactId: created.id, name: created.name };
-            clientInput.value = created.name;
-            clientBox.innerHTML = '';
-          },
-        }, `+ Создать «${q}»`));
-      } catch { /* поиск молча не удался */ }
-    }, 300);
-  });
-
-  const note = textField('Заметка', booking?.note || '');
-  const warnBox = el('div', { class: 'error' });
-  let ackWarnings = false;
-
-  openModal({
-    title: booking ? 'Изменить запись' : 'Новая запись',
-    body: el('div', {}, [
-      el('div', { class: 'field' }, [el('label', {}, 'Дата'), dateInput]),
-      el('div', { class: 'field', style: 'display:flex;gap:8px' }, [
-        el('div', { style: 'flex:1' }, [el('label', {}, 'Начало'), startInput]),
-        el('div', { style: 'flex:1' }, [el('label', {}, 'Конец'), endInput]),
-      ]),
-      el('div', { class: 'field' }, [el('label', {}, 'Участники'),
-        el('div', { class: 'checklist' }, empChecks.length ? empChecks.map((c) => c.node) : [el('span', { class: 'muted' }, 'нет сотрудников')])]),
-      el('div', { class: 'field' }, [el('label', {}, 'Услуги'),
-        el('div', { class: 'checklist' }, svcChecks.length ? svcChecks.map((c) => c.node) : [el('span', { class: 'muted' }, 'нет услуг')])]),
-      el('div', { class: 'field' }, [el('label', {}, 'Сумма, ₽ (авто — можно изменить)'), priceInput]),
-      el('div', { class: 'field' }, [el('label', {}, 'Клиент (CRM, необязательно)'), clientInput, clientBox]),
-      note.field,
-      warnBox,
-    ]),
-    submitLabel: 'Сохранить',
-    onSubmit: async () => {
-      const start = new Date(`${dateInput.value}T${startInput.value}`);
-      const end = new Date(`${dateInput.value}T${endInput.value}`);
-      const body = {
-        workPointId: state.workPointId,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        employeeIds: empChecks.filter((c) => c.cb.checked).map((c) => c.id),
-        serviceIds: svcChecks.filter((c) => c.cb.checked).map((c) => c.id),
-        priceOverride: priceDirty && priceInput.value !== '' ? Number(priceInput.value) : null,
-        client: clientSel,
-        note: note.input.value.trim() || null,
-      };
-      const fn = booking
-        ? () => api.update('bookings', booking.id, body)
-        : () => api.create('bookings', body);
-      const result = await fn();
-      if (result.warnings?.length && !ackWarnings) {
-        warnBox.textContent = `${result.warnings.join('; ')}. Нажмите «Сохранить» ещё раз, чтобы оставить как есть.`;
-        ackWarnings = true;
-        // Запись уже сохранена (мягкая проверка не блокирует) — просто обновляем.
-        await render(mount, api, state);
-        throw new Error('__shown__'); // не закрывать модалку: показали предупреждение
-      }
-      await render(mount, api, state);
-    },
-  });
+  draw(); details.append(el('summary', {}, 'Месяц / год'), pane); return details;
 }

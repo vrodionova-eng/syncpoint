@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { asyncH, ok } from './crudRouter.js';
 import { fetchB24Users } from '../b24/users.js';
-import { searchContacts, createContact } from '../b24/crm.js';
+import { searchContacts, createContact, searchClients } from '../b24/crm.js';
 import { ValidationError } from '../lib/errors.js';
 
 const r = Router();
 
 r.get('/users', asyncH(async (req, res) => ok(res, await fetchB24Users())));
+r.get('/crm/clients', asyncH(async (req, res) => ok(res, await searchClients(String(req.query.query || '')))));
 
 r.get('/crm/contacts', asyncH(async (req, res) =>
   ok(res, await searchContacts(String(req.query.query || '')))));
