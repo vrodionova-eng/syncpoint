@@ -1,4 +1,5 @@
 import { servicesRepo } from '../repositories/servicesRepo.js';
+import { serviceCategoriesRepo } from '../repositories/serviceCategoriesRepo.js';
 import { toolsRepo } from '../repositories/toolsRepo.js';
 import { bookingsRepo } from '../repositories/bookingsRepo.js';
 import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
@@ -105,12 +106,16 @@ export const servicesService = {
     return s;
   },
   async create(body) {
-    return servicesRepo.create(await buildService(body, null));
+    const categoryId = body.categoryId || null;
+    if (categoryId && !(await serviceCategoriesRepo.get(categoryId))) throw new ValidationError('Категория не найдена');
+    return servicesRepo.create({ ...await buildService(body, null), categoryId });
   },
   async update(id, body) {
     const existing = await servicesRepo.get(id);
     if (!existing) throw new NotFoundError('Услуга не найдена');
-    return servicesRepo.update(id, await buildService(body, id));
+    const categoryId = body.categoryId === undefined ? (existing.categoryId ?? null) : (body.categoryId || null);
+    if (categoryId && !(await serviceCategoriesRepo.get(categoryId))) throw new ValidationError('Категория не найдена');
+    return servicesRepo.update(id, { ...await buildService(body, id), categoryId });
   },
   async remove(id) {
     const all = await servicesRepo.list();

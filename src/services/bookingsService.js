@@ -5,6 +5,7 @@ import { servicesRepo } from '../repositories/servicesRepo.js';
 import { toolsRepo } from '../repositories/toolsRepo.js';
 import { toolInstancesRepo } from '../repositories/toolInstancesRepo.js';
 import { ValidationError, NotFoundError, ConflictError } from '../lib/errors.js';
+import { defaultPrice } from '../public/js/servicePrice.js';
 
 const MIN_DURATION_MS = 5 * 60 * 1000;
 
@@ -18,19 +19,6 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
-// Цена услуги по умолчанию (range — по минимуму, manual — 0).
-function defaultPrice(svc, byId) {
-  if (!svc) return 0;
-  if (svc.isComposite) {
-    if (svc.compositeSum === 'fixed') return svc.price ?? 0;
-    if (svc.compositeSum === 'auto') {
-      return (svc.childServiceIds || []).reduce((sum, id) => sum + defaultPrice(byId.get(id), byId), 0);
-    }
-    return 0; // manual
-  }
-  if (svc.priceType === 'fixed') return svc.price ?? 0;
-  return svc.priceMin ?? 0; // range — консервативно по минимуму
-}
 
 function isEstimatedPrice(svc, byId) {
   if (!svc) return false;
@@ -154,9 +142,9 @@ async function assignTools(spaceId, services, startMs, endMs, excludeId) {
   return { toolInstanceIds: assigned, warnings };
 }
 
-function computePrice(services, priceOverride) {
+async function computePrice(services, priceOverride) {
   if (priceOverride != null) return { priceTotal: priceOverride, priceEstimated: false };
-  const byId = new Map();
+  const byId = new Map((await servicesRepo.list()).map((s) => [s.id, s]));
   return {
     priceTotal: services.reduce((sum, s) => sum + defaultPrice(s, byId), 0),
     priceEstimated: services.some((s) => isEstimatedPrice(s, byId)),
@@ -190,7 +178,7 @@ export const bookingsService = {
     const { toolInstanceIds, warnings } = await assignTools(
       v.workPoint.spaceId, v.services, startMs, endMs, null,
     );
-    const { priceTotal, priceEstimated } = computePrice(v.services, v.priceOverride);
+    const { priceTotal, priceEstimated } = await computePrice(v.services, v.priceOverride);
 
     const booking = await bookingsRepo.create({
       workPointId: v.workPoint.id,
@@ -221,7 +209,7 @@ export const bookingsService = {
     const { toolInstanceIds, warnings } = await assignTools(
       v.workPoint.spaceId, v.services, startMs, endMs, id,
     );
-    const { priceTotal, priceEstimated } = computePrice(v.services, v.priceOverride);
+    const { priceTotal, priceEstimated } = await computePrice(v.services, v.priceOverride);
 
     const booking = await bookingsRepo.update(id, {
       workPointId: v.workPoint.id,

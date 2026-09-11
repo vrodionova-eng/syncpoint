@@ -1,4 +1,5 @@
 import { el, textField, openModal } from '../ui.js';
+import { defaultPrice } from '../servicePrice.js';
 
 const DAY_START = 8;   // 08:00
 const DAY_END = 21;    // 21:00
@@ -195,12 +196,11 @@ async function openBookingForm(mount, api, state, { date, booking }) {
   function defaultSum() {
     return svcChecks.filter((c) => c.cb.checked).reduce((sum, c) => {
       const s = c.svc;
-      if (s.isComposite) return sum + (s.compositeSum === 'fixed' ? (s.price ?? 0) : 0);
-      return sum + (s.priceType === 'fixed' ? (s.price ?? 0) : (s.priceMin ?? 0));
+      return sum + defaultPrice(s, new Map(svcChecks.map((c) => [c.id, c.svc])));
     }, 0);
   }
   function syncPrice() {
-    if (!priceDirty) priceInput.value = defaultSum() || '';
+    if (!priceDirty) priceInput.value = defaultSum();
   }
   syncPrice();
 
